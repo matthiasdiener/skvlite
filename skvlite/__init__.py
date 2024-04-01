@@ -5,10 +5,6 @@ from os.path import join
 from typing import Any
 
 
-class ReadOnlyKVStore:
-    pass
-
-
 class KVStore:
     def __init__(self, filename: str, container_dir: str = None, **kwargs) -> None:
         os.makedirs(container_dir, exist_ok=True)
