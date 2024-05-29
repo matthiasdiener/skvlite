@@ -10,6 +10,28 @@ K = TypeVar("K")
 V = TypeVar("V")
 
 
+class NoSuchEntryError(KeyError):
+    """Raised when an entry is not found in a :class:`PersistentDict`."""
+    pass
+
+
+class NoSuchEntryCollisionError(NoSuchEntryError):
+    """Raised when an entry is not found in a :class:`PersistentDict`, but it
+    contains an entry with the same hash key (hash collision)."""
+    pass
+
+
+class ReadOnlyEntryError(KeyError):
+    """Raised when an attempt is made to overwrite an entry in a
+    :class:`WriteOncePersistentDict`."""
+    pass
+
+
+class CollisionWarning(UserWarning):
+    """Warning raised when a collision is detected in a :class:`PersistentDict`."""
+    pass
+
+
 class KVStore(Mapping[K, V]):
     def __init__(self, filename: str, container_dir: Optional[str] = None,
                  enable_wal: bool = False) -> None:
@@ -73,7 +95,7 @@ class KVStore(Mapping[K, V]):
                               (keyhash,))
         row = c.fetchone()
         if row is None:
-            raise Exception(key)
+            raise NoSuchEntryError(key)
 
         stored_key, value = pickle.loads(row[0])
         self._collision_check(key, stored_key)
@@ -149,9 +171,7 @@ class KVStore(Mapping[K, V]):
         self.conn.execute("DELETE FROM dict")
 
     def store_if_not_present(self, key: Any, value: Any) -> None:
-        if key in self:
-            return
-        self[key] = value
+        self.store(key, value, _skip_if_present=True)
 
     def vacuum(self) -> None:
         self.conn.execute("VACUUM")
@@ -177,7 +197,7 @@ class WriteOnceKVStore(KVStore):
             self.conn.execute("INSERT INTO dict VALUES (?, ?)", (keyhash, v))
         except sqlite3.IntegrityError:
             if not _skip_if_present:
-                raise Exception("WriteOncePersistentDict, "
+                raise ReadOnlyEntryError("WriteOncePersistentDict, "
                                          "tried overwriting key")
 
     def _fetch(self, keyhash: str) -> Tuple[K, V]:  # pylint:disable=method-hidden
@@ -195,7 +215,7 @@ class WriteOnceKVStore(KVStore):
         try:
             stored_key, value = self._fetch(keyhash)
         except KeyError:
-            raise Exception(key)
+            raise NoSuchEntryError(key)
         else:
             self._collision_check(key, stored_key)
             return value
