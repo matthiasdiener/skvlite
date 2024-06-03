@@ -1,6 +1,7 @@
 import os
 import pickle
 import sqlite3
+import zlib
 from os.path import join
 from typing import Any, Generator, Mapping, Optional, Tuple, TypeVar
 from pytools.persistent_dict import KeyBuilder
@@ -36,7 +37,7 @@ class KVStore(Mapping[K, V]):
         self.conn = sqlite3.connect(self.filename, isolation_level=None)
         self.conn.execute(
             "CREATE TABLE IF NOT EXISTS dict "
-            "(keyhash TEXT NOT NULL PRIMARY KEY, key_value TEXT NOT NULL)"
+            "(keyhash TEXT NOT NULL PRIMARY KEY, key_value BLOB NOT NULL)"
             )
 
         if enable_wal:
@@ -57,14 +58,17 @@ class KVStore(Mapping[K, V]):
 
     def store(self, key: K, value: V, _skip_if_present: bool = False) -> None:
         keyhash = self.key_builder(key)
-        v = pickle.dumps((key, value))
-
+        # Pickle the (key, value) tuple
+        pickled_data = pickle.dumps((key, value))
+        # Compress the pickled data
+        compressed_data = zlib.compress(pickled_data)
+        
         if _skip_if_present:
             self.conn.execute("INSERT OR IGNORE INTO dict VALUES (?, ?)",
-                              (keyhash, v))
+                              (keyhash, compressed_data))
         else:
             self.conn.execute("INSERT OR REPLACE INTO dict VALUES (?, ?)",
-                              (keyhash, v))
+                              (keyhash, compressed_data))
 
     def fetch(self, key: K) -> V:
         keyhash = self.key_builder(key)
@@ -74,7 +78,11 @@ class KVStore(Mapping[K, V]):
         if row is None:
             raise NoSuchEntryError(key)
 
-        stored_key, value = pickle.loads(row[0])
+        # Decompress the data
+        compressed_data = row[0]
+        pickled_data = zlib.decompress(compressed_data)
+        stored_key, value = pickle.loads(pickled_data)
+        
         self._collision_check(key, stored_key)
         return value
 
@@ -96,7 +104,9 @@ class KVStore(Mapping[K, V]):
             if row is None:
                 raise NoSuchEntryError(key)
 
-            stored_key, _value = pickle.loads(row[0])
+            compressed_data = row[0]
+            pickled_data = zlib.decompress(compressed_data)
+            stored_key, _value = pickle.loads(pickled_data)
             self._collision_check(key, stored_key)
 
             self.conn.execute("DELETE FROM dict WHERE keyhash=?", (keyhash,))
@@ -116,15 +126,18 @@ class KVStore(Mapping[K, V]):
 
     def keys(self) -> Generator[K, None, None]:
         for row in self.conn.execute("SELECT key_value FROM dict ORDER BY rowid"):
-            yield pickle.loads(row[0])[0]
+            pickled_data = zlib.decompress(row[0])
+            yield pickle.loads(pickled_data)[0]
 
     def values(self) -> Generator[V, None, None]:
         for row in self.conn.execute("SELECT key_value FROM dict ORDER BY rowid"):
-            yield pickle.loads(row[0])[1]
+            pickled_data = zlib.decompress(row[0])
+            yield pickle.loads(pickled_data)[1]
 
-    def items(self) -> Generator[tuple[K, V], None, None]:
+    def items(self) -> Generator[Tuple[K, V], None, None]:
         for row in self.conn.execute("SELECT key_value FROM dict ORDER BY rowid"):
-            yield pickle.loads(row[0])
+            pickled_data = zlib.decompress(row[0])
+            yield pickle.loads(pickled_data)
 
     def size(self) -> int:
         return next(self.conn.execute("SELECT page_size * page_count FROM "
@@ -155,10 +168,13 @@ class ReadOnlyKVStore(KVStore):
 class WriteOnceKVStore(KVStore):
     def store(self, key: K, value: V, _skip_if_present: bool = False) -> None:
         keyhash = self.key_builder(key)
-        v = pickle.dumps((key, value))
+        # Pickle the (key, value) tuple
+        pickled_data = pickle.dumps((key, value))
+        # Compress the pickled data
+        compressed_data = zlib.compress(pickled_data)
 
         try:
-            self.conn.execute("INSERT INTO dict VALUES (?, ?)", (keyhash, v))
+            self.conn.execute("INSERT INTO dict VALUES (?, ?)", (keyhash, compressed_data))
         except sqlite3.IntegrityError:
             if not _skip_if_present:
                 raise ReadOnlyEntryError("WriteOncePersistentDict, "
@@ -170,7 +186,8 @@ class WriteOnceKVStore(KVStore):
         row = c.fetchone()
         if row is None:
             raise KeyError
-        return pickle.loads(row[0])
+        pickled_data = zlib.decompress(row[0])
+        return pickle.loads(pickled_data)
 
     def fetch(self, key: K) -> V:
         keyhash = self.key_builder(key)
