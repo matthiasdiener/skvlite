@@ -13,7 +13,8 @@ authors = [
 ]
 description = "A sqlite-based persistent dictionary."
 dependencies = [
-    "importlib_metadata;python_version<'3.8'"
+    "importlib_metadata;python_version<'3.8'",
+    "pytools",
 ]
 readme = "README.md"
 license = { file="LICENSE" }
