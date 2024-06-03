@@ -19,7 +19,7 @@ start = time.time()
 
 for i in range(N):
     if i % 1000 == 0:
-        print(f"{rank=} {i=}")
+        print(f"rank={rank} i={i}")
     pdict[i] = i
 
     try:
@@ -36,7 +36,7 @@ for i in range(N):
 
 end = time.time()
 
-print(f"{rank=} KVStore: time taken to write {N} entries to {mydir}/skvlite.sqlite: {end-start} {s=}")
+print(f"rank={rank} KVStore: time taken to write {N} entries to {mydir}/skvlite.sqlite: {end-start} s={s}")
 
 pdict = WriteOnceKVStore("skvlite_writeonce.sqlite", container_dir=mydir)
 
@@ -46,7 +46,7 @@ start = time.time()
 
 for i in range(N):
     if i % 1000 == 0:
-        print(f"{rank=} {i=}")
+        print(f"rank={rank} i={i}")
 
     try:
         pdict[i] = i
@@ -58,4 +58,4 @@ for i in range(N):
 
 end = time.time()
 
-print(f"{rank=} WriteOnceKVStore: time taken to write {N} entries to {mydir}/skvlite.sqlite: {end-start} {s=}")
+print(f"rank={rank} WriteOnceKVStore: time taken to write {N} entries to {mydir}/skvlite.sqlite: {end-start} s={s}")

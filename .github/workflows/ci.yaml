@@ -105,13 +105,18 @@ jobs:
         cd examples
         for f in *.py; do [[ $f == "concurrency.py" ]] && continue; echo Running $f; python $f; done
 
-        echo "Running concurrency.py"
+        # mpi4py doesn't build on 3.13-dev
+        if [[ ${{ matrix.python-version }} != "3.13-dev" ]]; then
 
-        if [[ ${{ matrix.os }} == "macos-12" ]]; then
-          brew install openmpi
-        else
-          sudo apt-get -y install libopenmpi-dev openmpi-bin
+          echo "Running concurrency.py"
+
+          if [[ ${{ matrix.os }} == macos-* ]]; then
+            brew install openmpi
+          else
+            sudo apt-get -y install libopenmpi-dev openmpi-bin
+          fi
+
+          pip install mpi4py
+          mpirun --oversubscribe -n 4 python concurrency.py
+
         fi
-
-        pip install mpi4py
-        mpirun -n 4 python concurrency.py
