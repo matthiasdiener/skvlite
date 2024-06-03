@@ -15,6 +15,7 @@ description = "A sqlite-based persistent dictionary."
 dependencies = [
     "importlib_metadata;python_version<'3.8'",
     "pytools",
+    "platformdirs",
 ]
 readme = "README.md"
 license = { file="LICENSE" }

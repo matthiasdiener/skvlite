@@ -9,7 +9,7 @@ from skvlite import (KVStore, NoSuchEntryError, ReadOnlyEntryError,
 
 N = 10000
 
-mydir = "./tmp"
+mydir = "./_tmp"
 pdict = KVStore("skvlite.sqlite", container_dir=mydir)
 rank = MPI.COMM_WORLD.Get_rank()
 
