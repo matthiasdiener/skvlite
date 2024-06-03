@@ -3,8 +3,8 @@ import pickle
 import sqlite3
 from os.path import join
 from typing import Any, Generator, Mapping, Optional, Tuple, TypeVar
-from pytools.persistent_dict import KeyBuilder
 
+from pytools.persistent_dict import KeyBuilder
 
 K = TypeVar("K")
 V = TypeVar("V")
@@ -152,7 +152,7 @@ class KVStore(Mapping[K, V]):
         for row in self.conn.execute("SELECT key_value FROM dict ORDER BY rowid"):
             yield pickle.loads(row[0])[1]
 
-    def items(self) -> Generator[tuple[K, V], None, None]:
+    def items(self) -> Generator[Tuple[K, V], None, None]:
         """Return an iterator over the items in the dictionary."""
         for row in self.conn.execute("SELECT key_value FROM dict ORDER BY rowid"):
             yield pickle.loads(row[0])

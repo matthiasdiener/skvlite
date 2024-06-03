@@ -1,0 +1,115 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: main
+  schedule:
+  - cron:  '5 0 * * *'
+
+jobs:
+  # flake8:
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #   - uses: actions/checkout@v4
+  #   - name: Set up Python 3.8
+  #     uses: actions/setup-python@v5
+  #     with:
+  #       python-version: '3.8'
+  #   - name: Flake8 test
+  #     run: |
+  #       set -x
+  #       python -m pip install flake8 pep8-naming flake8-quotes flake8-bugbear flake8-pyproject flake8-isort
+  #       python -m flake8 --show-source --statistics "$(basename $GITHUB_REPOSITORY)" test doc examples && echo "Flake8 found no errors."
+
+  # mypy:
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #   - uses: actions/checkout@v4
+  #   - name: Set up Python 3.x
+  #     uses: actions/setup-python@v5
+  #     with:
+  #       python-version: '3.x'
+  #   - name: Run mypy
+  #     run: |
+  #       set -x
+  #       python -m pip install mypy pytest importlib_metadata
+  #       python -m pip install -e .
+  #       ./run-mypy.sh
+
+  # pylint:
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #   - uses: actions/checkout@v4
+  #   - uses: actions/setup-python@v5
+  #     with:
+  #       python-version: '3.x'
+  #   - name: Run Pylint
+  #     run: |
+  #       set -x
+  #       python -m pip install pylint PyYAML pytest
+  #       python -m pip install -e .
+  #       ./run-pylint.sh
+
+  # pydocstyle:
+  #     runs-on: ubuntu-latest
+  #     steps:
+  #     - uses: actions/checkout@v4
+  #     - uses: actions/setup-python@v5
+  #       with:
+  #         python-version: '3.x'
+  #     - name: Run Pydocstyle
+  #       run: |
+  #         set -x
+  #         python -m pip install pydocstyle
+  #         python -m pydocstyle "$(basename $GITHUB_REPOSITORY)" && echo "pydocstyle found no errors."
+
+  pytest:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        python-version: ["3.7", "3.8", "3.9", "3.10", "3.11", "3.12", "3.13-dev", "pypy3.9", "pypy3.10"]
+        os: [ubuntu-latest, macos-12]
+      fail-fast: false
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+    - name: Run Pytest
+      run: |
+        set -x
+        python -m pip install pytest pytest-cov pytools
+        python -m pip install -e .
+        cd test
+        python -m pytest --cov=skvlite --durations=5 --tb=native -rxsw --cov-report=term-missing -v .
+
+  # examples:
+  #   runs-on: ${{ matrix.os }}
+  #   strategy:
+  #     matrix:
+  #       python-version: ["3.7", "3.8", "3.9", "3.10", "3.11", "3.12", "3.13-dev"]
+  #       os: [ubuntu-latest, macos-latest]
+  #     fail-fast: false
+
+  #   steps:
+  #   - uses: actions/checkout@v4
+  #   - name: Set up Python ${{ matrix.python-version }}
+  #     uses: actions/setup-python@v5
+  #     with:
+  #       python-version: ${{ matrix.python-version }}
+  #   - name: Run examples
+  #     run: |
+  #       set -x
+  #       python -m pip install -e .
+  #       cd examples
+  #       for f in *.py; do [[ $f == "speed.py" ]] && continue; echo Running $f; python $f; done
+  #   - name: Run speed.py
+  #     if: matrix.python-version < '3.10'
+  #     run: |
+  #       set -x
+  #       python -m pip install stableset orderedset
+  #       cd examples
+  #       python speed.py
