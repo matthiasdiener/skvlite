@@ -67,7 +67,6 @@ class KVStore(Mapping[K, V]):
 
         # https://www.sqlite.org/wal.html
         if enable_wal:
-            print("Enabling WAL mode")
             self._exec_sql("PRAGMA journal_mode = 'WAL'")
 
         # Use in-memory temp store
