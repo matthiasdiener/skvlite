@@ -47,30 +47,41 @@ class KVStore(Mapping[K, V]):
         # https://www.sqlite.org/lang_transaction.html#implicit_versus_explicit_transactions
         self.conn = sqlite3.connect(self.filename, isolation_level=None)
 
-        self.conn.execute(
-            "CREATE TABLE IF NOT EXISTS dict "
-            "(keyhash TEXT NOT NULL PRIMARY KEY, key_value TEXT NOT NULL)"
-            )
+        self._exec_sql(
+                "CREATE TABLE IF NOT EXISTS dict "
+                "(keyhash TEXT NOT NULL PRIMARY KEY, key_value TEXT NOT NULL)"
+                )
 
         # https://www.sqlite.org/wal.html
         if enable_wal:
             print("Enabling WAL mode")
-            self.conn.execute("PRAGMA journal_mode = 'WAL'")
+            self._exec_sql("PRAGMA journal_mode = 'WAL'")
 
         # Use in-memory temp store
         # https://www.sqlite.org/pragma.html#pragma_temp_store
-        self.conn.execute("PRAGMA temp_store = 'MEMORY'")
+        self._exec_sql("PRAGMA temp_store = 'MEMORY'")
 
         # https://www.sqlite.org/pragma.html#pragma_synchronous
-        self.conn.execute("PRAGMA synchronous = 'NORMAL'")
+        self._exec_sql("PRAGMA synchronous = 'NORMAL'")
 
         # 64 MByte of cache
         # https://www.sqlite.org/pragma.html#pragma_cache_size
-        self.conn.execute("PRAGMA cache_size = -64000")
+        self._exec_sql("PRAGMA cache_size = -64000")
+
+    def _exec_sql(self, *args: Any) -> Any:
+        while True:
+            try:
+                return self.conn.execute(*args)
+            except sqlite3.OperationalError as e:
+                # If the database is busy, retry
+                if (hasattr(e, "sqlite_errorcode")
+                    and not e.sqlite_errorcode == sqlite3.SQLITE_BUSY):
+                    raise
+            else:
+                break
 
     def _collision_check(self, key: K, stored_key: K) -> None:
         if stored_key != key:
-            print(stored_key, key)
             # Key collision, oh well.
             raise Exception(f"{self.identifier}: key collision in cache at "
                     f"'{self.container_dir}' -- these are sufficiently unlikely "
@@ -85,23 +96,14 @@ class KVStore(Mapping[K, V]):
 
         mode = "IGNORE" if _skip_if_present else "REPLACE"
 
-        while True:
-            try:
-                self.conn.execute(f"INSERT OR {mode} INTO dict VALUES (?, ?)",
-                                (keyhash, v))
-            except sqlite3.OperationalError as e:
-                # If the database is busy, retry
-                if (hasattr(e, "sqlite_errorcode")
-                    and not e.sqlite_errorcode == sqlite3.SQLITE_BUSY):
-                    raise
-            else:
-                break
+        self._exec_sql(f"INSERT OR {mode} INTO dict VALUES (?, ?)",
+                       (keyhash, v))
 
     def fetch(self, key: K) -> V:
         keyhash = self.key_builder(key)
 
-        c = self.conn.execute("SELECT key_value FROM dict WHERE keyhash=?",
-                              (keyhash,))
+        c = self._exec_sql("SELECT key_value FROM dict WHERE keyhash=?",
+                           (keyhash,))
         row = c.fetchone()
         if row is None:
             raise NoSuchEntryError(key)
@@ -154,7 +156,7 @@ class KVStore(Mapping[K, V]):
 
     def __len__(self) -> int:
         """Return the number of entries in the dictionary."""
-        return next(self.conn.execute("SELECT COUNT(*) FROM dict"))[0]
+        return next(self._exec_sql("SELECT COUNT(*) FROM dict"))[0]
 
     def __iter__(self) -> Generator[K, None, None]:
         """Return an iterator over the keys in the dictionary."""
@@ -162,22 +164,22 @@ class KVStore(Mapping[K, V]):
 
     def keys(self) -> Generator[K, None, None]:
         """Return an iterator over the keys in the dictionary."""
-        for row in self.conn.execute("SELECT key_value FROM dict ORDER BY rowid"):
+        for row in self._exec_sql("SELECT key_value FROM dict ORDER BY rowid"):
             yield pickle.loads(row[0])[0]
 
     def values(self) -> Generator[V, None, None]:
         """Return an iterator over the values in the dictionary."""
-        for row in self.conn.execute("SELECT key_value FROM dict ORDER BY rowid"):
+        for row in self._exec_sql("SELECT key_value FROM dict ORDER BY rowid"):
             yield pickle.loads(row[0])[1]
 
     def items(self) -> Generator[Tuple[K, V], None, None]:
         """Return an iterator over the items in the dictionary."""
-        for row in self.conn.execute("SELECT key_value FROM dict ORDER BY rowid"):
+        for row in self._exec_sql("SELECT key_value FROM dict ORDER BY rowid"):
             yield pickle.loads(row[0])
 
     def size(self) -> int:
         """Return the size of the dictionary in bytes."""
-        return next(self.conn.execute("SELECT page_size * page_count FROM "
+        return next(self._exec_sql("SELECT page_size * page_count FROM "
                           "pragma_page_size(), pragma_page_count()"))[0]
 
     def __repr__(self) -> str:
@@ -186,13 +188,13 @@ class KVStore(Mapping[K, V]):
 
     def clear(self) -> None:
         """Remove all entries from the dictionary."""
-        self.conn.execute("DELETE FROM dict")
+        self._exec_sql("DELETE FROM dict")
 
     def store_if_not_present(self, key: Any, value: Any) -> None:
         self.store(key, value, _skip_if_present=True)
 
     def vacuum(self) -> None:
-        self.conn.execute("VACUUM")
+        self._exec_sql("VACUUM")
 
     def close(self) -> None:
         self.conn.close()
@@ -211,26 +213,16 @@ class WriteOnceKVStore(KVStore):
         keyhash = self.key_builder(key)
         v = pickle.dumps((key, value))
 
-        while True:
-            try:
-                try:
-                    self.conn.execute("INSERT INTO dict VALUES (?, ?)", (keyhash, v))
-                except sqlite3.IntegrityError:
-                    if not _skip_if_present:
-                        raise ReadOnlyEntryError("WriteOncePersistentDict, "
-                                                "tried overwriting key")
-            except sqlite3.OperationalError as e:
-                # If the database is busy, retry
-                if (hasattr(e, "sqlite_errorcode")
-                    and not e.sqlite_errorcode == sqlite3.SQLITE_BUSY):
-                    raise
-            else:
-                break
-
+        try:
+            self._exec_sql("INSERT INTO dict VALUES (?, ?)", (keyhash, v))
+        except sqlite3.IntegrityError:
+            if not _skip_if_present:
+                raise ReadOnlyEntryError("WriteOncePersistentDict, "
+                                         "tried overwriting key")
 
     def _fetch(self, keyhash: str) -> Tuple[K, V]:  # pylint:disable=method-hidden
         # This method is separate from fetch() to allow for LRU caching
-        c = self.conn.execute("SELECT key_value FROM dict WHERE keyhash=?",
+        c = self._exec_sql("SELECT key_value FROM dict WHERE keyhash=?",
                               (keyhash,))
         row = c.fetchone()
         if row is None:
