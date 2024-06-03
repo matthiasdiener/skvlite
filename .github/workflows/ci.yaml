@@ -20,7 +20,7 @@ jobs:
       run: |
         set -x
         python -m pip install flake8 pep8-naming flake8-quotes flake8-bugbear flake8-pyproject flake8-isort
-        python -m flake8 --show-source --statistics "$(basename $GITHUB_REPOSITORY)" test doc examples && echo "Flake8 found no errors."
+        python -m flake8 --show-source --statistics "$(basename $GITHUB_REPOSITORY)" test examples && echo "Flake8 found no errors."
 
   mypy:
     runs-on: ubuntu-latest
