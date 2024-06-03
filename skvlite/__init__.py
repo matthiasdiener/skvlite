@@ -91,7 +91,8 @@ class KVStore(Mapping[K, V]):
                                 (keyhash, v))
             except sqlite3.OperationalError as e:
                 # If the database is busy, retry
-                if not e.sqlite_errorcode == sqlite3.SQLITE_BUSY:
+                if (hasattr(e, "sqlite_errorcode")
+                    and not e.sqlite_errorcode == sqlite3.SQLITE_BUSY):
                     raise
             else:
                 break
@@ -141,7 +142,8 @@ class KVStore(Mapping[K, V]):
                     raise e
             except sqlite3.OperationalError as e:
                 # If the database is busy, retry
-                if not e.sqlite_errorcode == sqlite3.SQLITE_BUSY:
+                if (hasattr(e, "sqlite_errorcode")
+                    and not e.sqlite_errorcode == sqlite3.SQLITE_BUSY):
                     raise
             else:
                 break
@@ -219,7 +221,8 @@ class WriteOnceKVStore(KVStore):
                                                 "tried overwriting key")
             except sqlite3.OperationalError as e:
                 # If the database is busy, retry
-                if not e.sqlite_errorcode == sqlite3.SQLITE_BUSY:
+                if (hasattr(e, "sqlite_errorcode")
+                    and not e.sqlite_errorcode == sqlite3.SQLITE_BUSY):
                     raise
             else:
                 break
