@@ -1,7 +1,7 @@
 import os
 import pickle
 import sqlite3
-from typing import cast, Any, Generator, Mapping, Optional, Tuple, TypeVar
+from typing import Any, Generator, Mapping, Optional, Tuple, TypeVar, cast
 
 from pytools.persistent_dict import KeyBuilder
 
@@ -37,11 +37,13 @@ class KVStore(Mapping[K, V]):
         from os.path import join
 
         if container_dir is None:
-            import platformdirs
             import sys
+
+            import platformdirs
 
             if sys.platform == "darwin" and os.getenv("XDG_CACHE_HOME") is not None:
                 from typing import cast
+
                 # platformdirs does not handle XDG_CACHE_HOME on macOS
                 # https://github.com/platformdirs/platformdirs/issues/269
                 container_dir = join(

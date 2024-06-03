@@ -3,15 +3,14 @@ import sys  # noqa
 import tempfile
 from dataclasses import dataclass
 from enum import Enum, IntEnum
+from typing import Any
 
 import pytest
 from pytools.tag import Tag, tag_dataclass
 
 from skvlite import KVStore as PersistentDict
-from skvlite import WriteOnceKVStore as WriteOncePersistentDict
 from skvlite import ReadOnlyEntryError
-
-from typing import Any
+from skvlite import WriteOnceKVStore as WriteOncePersistentDict
 
 
 @tag_dataclass
