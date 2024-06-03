@@ -3,8 +3,8 @@ import pickle
 import sqlite3
 from os.path import join
 from typing import Any, Generator, Mapping, Optional, Tuple, TypeVar
-from pytools.persistent_dict import KeyBuilder
 
+from pytools.persistent_dict import KeyBuilder
 
 K = TypeVar("K")
 V = TypeVar("V")
