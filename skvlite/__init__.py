@@ -46,6 +46,7 @@ class KVStore(Mapping[K, V]):
         # isolation_level=None: enable autocommit mode
         # https://www.sqlite.org/lang_transaction.html#implicit_versus_explicit_transactions
         self.conn = sqlite3.connect(self.filename, isolation_level=None)
+
         self.conn.execute(
             "CREATE TABLE IF NOT EXISTS dict "
             "(keyhash TEXT NOT NULL PRIMARY KEY, key_value TEXT NOT NULL)"
@@ -53,14 +54,15 @@ class KVStore(Mapping[K, V]):
 
         # https://www.sqlite.org/wal.html
         if enable_wal:
+            print("Enabling WAL mode")
             self.conn.execute("PRAGMA journal_mode = 'WAL'")
 
-        # temp_store=2: use in-memory temp store
+        # Use in-memory temp store
         # https://www.sqlite.org/pragma.html#pragma_temp_store
-        self.conn.execute("PRAGMA temp_store = 2")
+        self.conn.execute("PRAGMA temp_store = 'MEMORY'")
 
         # https://www.sqlite.org/pragma.html#pragma_synchronous
-        self.conn.execute("PRAGMA synchronous = 1")
+        self.conn.execute("PRAGMA synchronous = 'NORMAL'")
 
         # 64 MByte of cache
         # https://www.sqlite.org/pragma.html#pragma_cache_size
@@ -81,12 +83,18 @@ class KVStore(Mapping[K, V]):
         keyhash = self.key_builder(key)
         v = pickle.dumps((key, value))
 
-        if _skip_if_present:
-            self.conn.execute("INSERT OR IGNORE INTO dict VALUES (?, ?)",
-                              (keyhash, v))
-        else:
-            self.conn.execute("INSERT OR REPLACE INTO dict VALUES (?, ?)",
-                              (keyhash, v))
+        mode = "IGNORE" if _skip_if_present else "REPLACE"
+
+        while True:
+            try:
+                self.conn.execute(f"INSERT OR {mode} INTO dict VALUES (?, ?)",
+                                (keyhash, v))
+            except sqlite3.OperationalError as e:
+                # If the database is busy, retry
+                if not e.sqlite_errorcode == sqlite3.SQLITE_BUSY:
+                    raise
+            else:
+                break
 
     def fetch(self, key: K) -> V:
         keyhash = self.key_builder(key)
@@ -111,24 +119,32 @@ class KVStore(Mapping[K, V]):
         """Remove the entry associated with *key* from the dictionary."""
         keyhash = self.key_builder(key)
 
-        self.conn.execute("BEGIN EXCLUSIVE TRANSACTION")
+        while True:
+            try:
+                self.conn.execute("BEGIN EXCLUSIVE TRANSACTION")
 
-        try:
-            # This is split into SELECT/DELETE to allow for a collision check
-            c = self.conn.execute("SELECT key_value FROM dict WHERE keyhash=?",
-                                (keyhash,))
-            row = c.fetchone()
-            if row is None:
-                raise NoSuchEntryError(key)
+                try:
+                    # This is split into SELECT/DELETE to allow for a collision check
+                    c = self.conn.execute("SELECT key_value FROM dict WHERE keyhash=?",
+                                        (keyhash,))
+                    row = c.fetchone()
+                    if row is None:
+                        raise NoSuchEntryError(key)
 
-            stored_key, _value = pickle.loads(row[0])
-            self._collision_check(key, stored_key)
+                    stored_key, _value = pickle.loads(row[0])
+                    self._collision_check(key, stored_key)
 
-            self.conn.execute("DELETE FROM dict WHERE keyhash=?", (keyhash,))
-            self.conn.execute("COMMIT")
-        except Exception as e:
-            self.conn.execute("ROLLBACK")
-            raise e
+                    self.conn.execute("DELETE FROM dict WHERE keyhash=?", (keyhash,))
+                    self.conn.execute("COMMIT")
+                except Exception as e:
+                    self.conn.execute("ROLLBACK")
+                    raise e
+            except sqlite3.OperationalError as e:
+                # If the database is busy, retry
+                if not e.sqlite_errorcode == sqlite3.SQLITE_BUSY:
+                    raise
+            else:
+                break
 
     def __delitem__(self, key: K) -> None:
         """Remove the entry associated with *key* from the dictionary."""
@@ -193,12 +209,21 @@ class WriteOnceKVStore(KVStore):
         keyhash = self.key_builder(key)
         v = pickle.dumps((key, value))
 
-        try:
-            self.conn.execute("INSERT INTO dict VALUES (?, ?)", (keyhash, v))
-        except sqlite3.IntegrityError:
-            if not _skip_if_present:
-                raise ReadOnlyEntryError("WriteOncePersistentDict, "
-                                         "tried overwriting key")
+        while True:
+            try:
+                try:
+                    self.conn.execute("INSERT INTO dict VALUES (?, ?)", (keyhash, v))
+                except sqlite3.IntegrityError:
+                    if not _skip_if_present:
+                        raise ReadOnlyEntryError("WriteOncePersistentDict, "
+                                                "tried overwriting key")
+            except sqlite3.OperationalError as e:
+                # If the database is busy, retry
+                if not e.sqlite_errorcode == sqlite3.SQLITE_BUSY:
+                    raise
+            else:
+                break
+
 
     def _fetch(self, keyhash: str) -> Tuple[K, V]:  # pylint:disable=method-hidden
         # This method is separate from fetch() to allow for LRU caching
