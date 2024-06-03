@@ -80,36 +80,38 @@ jobs:
         python-version: ${{ matrix.python-version }}
     - name: Run Pytest
       run: |
-        set -x
-        python -m pip install pytest pytest-cov pytools
+        python -m pip install pytest pytest-cov
         python -m pip install -e .
         cd test
         python -m pytest --cov=skvlite --durations=5 --tb=native -rxsw --cov-report=term-missing -v .
 
-  # examples:
-  #   runs-on: ${{ matrix.os }}
-  #   strategy:
-  #     matrix:
-  #       python-version: ["3.7", "3.8", "3.9", "3.10", "3.11", "3.12", "3.13-dev"]
-  #       os: [ubuntu-latest, macos-latest]
-  #     fail-fast: false
+  examples:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        python-version: ["3.7", "3.8", "3.9", "3.10", "3.11", "3.12", "3.13-dev"]
+        os: [ubuntu-latest, macos-12]
+      fail-fast: false
 
-  #   steps:
-  #   - uses: actions/checkout@v4
-  #   - name: Set up Python ${{ matrix.python-version }}
-  #     uses: actions/setup-python@v5
-  #     with:
-  #       python-version: ${{ matrix.python-version }}
-  #   - name: Run examples
-  #     run: |
-  #       set -x
-  #       python -m pip install -e .
-  #       cd examples
-  #       for f in *.py; do [[ $f == "speed.py" ]] && continue; echo Running $f; python $f; done
-  #   - name: Run speed.py
-  #     if: matrix.python-version < '3.10'
-  #     run: |
-  #       set -x
-  #       python -m pip install stableset orderedset
-  #       cd examples
-  #       python speed.py
+    steps:
+    - uses: actions/checkout@v4
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+    - name: Run examples
+      run: |
+        python -m pip install -e .
+        cd examples
+        for f in *.py; do [[ $f == "concurrency.py" ]] && continue; echo Running $f; python $f; done
+
+        echo "Running concurrency.py"
+
+        if [[ ${{ matrix.os }} == "macos-12" ]]; then
+          brew install openmpi
+        else
+          apt-get -y install libopenmpi-dev openmpi-bin
+        fi
+
+        pip install mpi4py
+        mpirun -n 4 python concurrency.py
