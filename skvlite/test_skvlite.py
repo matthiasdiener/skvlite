@@ -26,3 +26,17 @@ def test_speed():
 
 if __name__ == "__main__":
     pytest.main(["-s", "-v"])
+
+def test_size():
+    try:
+        tmpdir = tempfile.mkdtemp()
+        pdict = KVStore("pytools-test", container_dir=tmpdir)
+
+        for i in range(10000):
+            pdict[f"foobarbazfoobbb{i}"] = i
+
+        size = pdict.size()
+        print("sqlite size: ", size/1024/1024, " MByte")
+        assert 1*1024*1024 < size < 2*1024*1024
+    finally:
+        shutil.rmtree(tmpdir)
