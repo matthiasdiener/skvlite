@@ -56,33 +56,31 @@ class KVStore(Mapping[K, V]):
                     "implementation (that is not considering some elements "
                     "relevant for equality comparison)")
 
-    def store(self, key: K, value: V, _skip_if_present: bool = False) -> None:
+    def _store_data(self, key: K, value: V, replace: bool) -> None:
         keyhash = self.key_builder(key)
-        # Pickle the (key, value) tuple
         pickled_data = pickle.dumps((key, value))
-        # Compress the pickled data
         compressed_data = zlib.compress(pickled_data)
         
-        if _skip_if_present:
-            self.conn.execute("INSERT OR IGNORE INTO dict VALUES (?, ?)",
-                              (keyhash, compressed_data))
+        if replace:
+            self.conn.execute("INSERT OR REPLACE INTO dict VALUES (?, ?)", (keyhash, compressed_data))
         else:
-            self.conn.execute("INSERT OR REPLACE INTO dict VALUES (?, ?)",
-                              (keyhash, compressed_data))
+            self.conn.execute("INSERT OR IGNORE INTO dict VALUES (?, ?)", (keyhash, compressed_data))
+
+    def _load_data(self, keyhash: str) -> Tuple[K, V]:
+        c = self.conn.execute("SELECT key_value FROM dict WHERE keyhash=?", (keyhash,))
+        row = c.fetchone()
+        if row is None:
+            raise NoSuchEntryError(keyhash)
+        compressed_data = row[0]
+        pickled_data = zlib.decompress(compressed_data)
+        return pickle.loads(pickled_data)
+
+    def store(self, key: K, value: V, _skip_if_present: bool = False) -> None:
+        self._store_data(key, value, not _skip_if_present)
 
     def fetch(self, key: K) -> V:
         keyhash = self.key_builder(key)
-        c = self.conn.execute("SELECT key_value FROM dict WHERE keyhash=?",
-                              (keyhash,))
-        row = c.fetchone()
-        if row is None:
-            raise NoSuchEntryError(key)
-
-        # Decompress the data
-        compressed_data = row[0]
-        pickled_data = zlib.decompress(compressed_data)
-        stored_key, value = pickle.loads(pickled_data)
-        
+        stored_key, value = self._load_data(keyhash)
         self._collision_check(key, stored_key)
         return value
 
@@ -167,38 +165,13 @@ class ReadOnlyKVStore(KVStore):
 
 class WriteOnceKVStore(KVStore):
     def store(self, key: K, value: V, _skip_if_present: bool = False) -> None:
-        keyhash = self.key_builder(key)
-        # Pickle the (key, value) tuple
-        pickled_data = pickle.dumps((key, value))
-        # Compress the pickled data
-        compressed_data = zlib.compress(pickled_data)
-
-        try:
-            self.conn.execute("INSERT INTO dict VALUES (?, ?)", (keyhash, compressed_data))
-        except sqlite3.IntegrityError:
-            if not _skip_if_present:
-                raise ReadOnlyEntryError("WriteOncePersistentDict, "
-                                         "tried overwriting key")
-
-    def _fetch(self, keyhash: str) -> Tuple[K, V]:
-        c = self.conn.execute("SELECT key_value FROM dict WHERE keyhash=?",
-                              (keyhash,))
-        row = c.fetchone()
-        if row is None:
-            raise KeyError
-        pickled_data = zlib.decompress(row[0])
-        return pickle.loads(pickled_data)
+        self._store_data(key, value, not _skip_if_present)
 
     def fetch(self, key: K) -> V:
         keyhash = self.key_builder(key)
-
-        try:
-            stored_key, value = self._fetch(keyhash)
-        except KeyError:
-            raise NoSuchEntryError(key)
-        else:
-            self._collision_check(key, stored_key)
-            return value
+        stored_key, value = self._load_data(keyhash)
+        self._collision_check(key, stored_key)
+        return value
 
     def __delitem__(self, key: Any) -> None:
         raise AttributeError("Write-once KVStore")
