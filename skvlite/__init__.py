@@ -185,7 +185,7 @@ class KVStore(Mapping[K, V]):
         """Return an iterator over the values in the dictionary."""
         for row in self._exec_sql("SELECT key_value FROM dict ORDER BY rowid"):
             pickled_data = zlib.decompress(row[0])
-            yield pickle.loads(pickled_data[1]
+            yield pickle.loads(pickled_data[1])
 
     def items(self) -> Generator[Tuple[K, V], None, None]:  # type: ignore[override]
         """Return an iterator over the items in the dictionary."""
