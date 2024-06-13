@@ -2,30 +2,35 @@ import os
 import pickle
 import sqlite3
 from typing import Any, Generator, Mapping, Optional, Tuple, TypeVar, cast
-
-from pytools.persistent_dict import KeyBuilder
 import zlib
+from pytools.persistent_dict import KeyBuilder
+
 
 K = TypeVar("K")
 V = TypeVar("V")
 
+
 class NoSuchEntryError(KeyError):
     """Raised when an entry is not found in a :class:`PersistentDict`."""
     pass
+
 
 class NoSuchEntryCollisionError(NoSuchEntryError):
     """Raised when an entry is not found in a :class:`PersistentDict`, but it
     contains an entry with the same hash key (hash collision)."""
     pass
 
+
 class ReadOnlyEntryError(KeyError):
     """Raised when an attempt is made to overwrite an entry in a
     :class:`WriteOncePersistentDict`."""
     pass
 
+
 class CollisionWarning(UserWarning):
     """Warning raised when a collision is detected in a :class:`PersistentDict`."""
     pass
+
 
 class KVStore(Mapping[K, V]):
     def __init__(self, filename: str, container_dir: Optional[str] = None,
@@ -34,16 +39,10 @@ class KVStore(Mapping[K, V]):
 
         if container_dir is None:
             import sys
-
             import platformdirs
 
             if sys.platform == "darwin" and os.getenv("XDG_CACHE_HOME") is not None:
-                from typing import cast
-
-                # platformdirs does not handle XDG_CACHE_HOME on macOS
-                # https://github.com/platformdirs/platformdirs/issues/269
-                container_dir = join(
-                    cast(str, os.getenv("XDG_CACHE_HOME")), "pytools")
+                container_dir = join(cast(str, os.getenv("XDG_CACHE_HOME")), "pytools")
             else:
                 container_dir = platformdirs.user_cache_dir("pytools", "pytools")
 
@@ -56,7 +55,7 @@ class KVStore(Mapping[K, V]):
         self._exec_sql(
             "CREATE TABLE IF NOT EXISTS dict "
             "(keyhash TEXT NOT NULL PRIMARY KEY, key_value BLOB NOT NULL)"
-            )
+        )
 
         if enable_wal:
             self._exec_sql("PRAGMA journal_mode = 'WAL'")
@@ -78,11 +77,8 @@ class KVStore(Mapping[K, V]):
                 return self.conn.execute(*args)
             except sqlite3.OperationalError as e:
                 # If the database is busy, retry
-                if (hasattr(e, "sqlite_errorcode")
-                        and not e.sqlite_errorcode == sqlite3.SQLITE_BUSY):
+                if hasattr(e, "sqlite_errorcode") and not e.sqlite_errorcode == sqlite3.SQLITE_BUSY:
                     raise
-            else:
-                break
 
     def _collision_check(self, key: K, stored_key: K) -> None:
         if stored_key != key:
@@ -101,9 +97,13 @@ class KVStore(Mapping[K, V]):
         compressed_data = zlib.compress(pickled_data)
 
         if replace:
-            self.conn.execute("INSERT OR REPLACE INTO dict VALUES (?, ?)", (keyhash, compressed_data))
+            self.conn.execute(
+                "INSERT OR REPLACE INTO dict VALUES (?, ?)", (keyhash, compressed_data)
+            )
         else:
-            self.conn.execute("INSERT OR IGNORE INTO dict VALUES (?, ?)", (keyhash, compressed_data))
+            self.conn.execute(
+                "INSERT OR IGNORE INTO dict VALUES (?, ?)", (keyhash, compressed_data)
+            )
 
     def _load_data(self, keyhash: str) -> Tuple[K, V]:
         c = self.conn.execute("SELECT key_value FROM dict WHERE keyhash=?", (keyhash,))
@@ -139,9 +139,9 @@ class KVStore(Mapping[K, V]):
 
                 try:
                     # This is split into SELECT/DELETE to allow for a collision check
-                    c = self.conn.execute("SELECT key_value FROM dict "
-                                          "WHERE keyhash=?",
-                                          (keyhash,))
+                    c = self.conn.execute(
+                        "SELECT key_value FROM dict WHERE keyhash=?", (keyhash,)
+                    )
                     row = c.fetchone()
                     if row is None:
                         raise NoSuchEntryError(key)
@@ -159,8 +159,7 @@ class KVStore(Mapping[K, V]):
                     raise e
             except sqlite3.OperationalError as e:
                 # If the database is busy, retry
-                if (hasattr(e, "sqlite_errorcode")
-                        and not e.sqlite_errorcode == sqlite3.SQLITE_BUSY):
+                if hasattr(e, "sqlite_errorcode") and not e.sqlite_errorcode == sqlite3.SQLITE_BUSY:
                     raise
             else:
                 break
@@ -195,11 +194,14 @@ class KVStore(Mapping[K, V]):
 
     def nbytes(self) -> int:
         """Return the size of the dictionary in bytes."""
-        return cast(int,
-                    next(self._exec_sql("SELECT page_size * page_count FROM "
-                                        "pragma_page_size(), pragma_page_count()")
-                         )[0]
-                    )
+        return cast(
+            int,
+            next(
+                self._exec_sql(
+                    "SELECT page_size * page_count FROM pragma_page_size(), pragma_page_count()"
+                )
+            )[0],
+        )
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self.filename}, nitems={len(self)})"
@@ -225,6 +227,7 @@ class ReadOnlyKVStore(KVStore[K, V]):
     def __delitem__(self, key: Any) -> None:
         raise AttributeError("Read-only KVStore")
 
+
 class WriteOnceKVStore(KVStore[K, V]):
     def store(self, key: K, value: V, _skip_if_present: bool = False) -> None:
         if not _skip_if_present and key in self:
@@ -237,9 +240,10 @@ class WriteOnceKVStore(KVStore[K, V]):
     def __delitem__(self, key: K) -> None:
         raise AttributeError("Write-once KVStore")
 
+
 class PersistentDict(KVStore[K, V]):
     pass
 
+
 class WriteOncePersistentDict(WriteOnceKVStore[K, V]):
     pass
-
