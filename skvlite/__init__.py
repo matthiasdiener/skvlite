@@ -185,7 +185,7 @@ class KVStore(Mapping[K, V]):
         """Return an iterator over the values in the dictionary."""
         for row in self._exec_sql("SELECT key_value FROM dict ORDER BY rowid"):
             pickled_data = zlib.decompress(row[0])
-            yield pickle.loads(pickled_data[1])
+            yield pickle.loads(pickled_data)[1]
 
     def items(self) -> Generator[Tuple[K, V], None, None]:  # type: ignore[override]
         """Return an iterator over the items in the dictionary."""
@@ -227,13 +227,19 @@ class ReadOnlyKVStore(KVStore[K, V]):
 
 class WriteOnceKVStore(KVStore[K, V]):
     def store(self, key: K, value: V, _skip_if_present: bool = False) -> None:
-        self._store_data(key, value, not _skip_if_present)
+        if not _skip_if_present and key in self:
+            raise ReadOnlyEntryError(key)
+        super().store(key, value, _skip_if_present)
 
-    def fetch(self, key: K) -> V:
-        keyhash = self.key_builder(key)
-        stored_key, value = self._load_data(keyhash)
-        self._collision_check(key, stored_key)
-        return value
+    def __setitem__(self, key: K, value: V) -> None:
+        self.store(key, value)
 
-    def __delitem__(self, key: Any) -> None:
+    def __delitem__(self, key: K) -> None:
         raise AttributeError("Write-once KVStore")
+
+class PersistentDict(KVStore[K, V]):
+    pass
+
+class WriteOncePersistentDict(WriteOnceKVStore[K, V]):
+    pass
+
