@@ -44,7 +44,7 @@ class KVStore(Mapping[K, V]):
 
             if sys.platform == "darwin" and os.getenv("XDG_CACHE_HOME") is not None:
 
-                # platformdirs does not handle XDG_CACHE_HOME on macOS	
+                # platformdirs does not handle XDG_CACHE_HOME on macOS
                 # https://github.com/platformdirs/platformdirs/issues/269
                 container_dir = join(
                     cast(str, os.getenv("XDG_CACHE_HOME")), "pytools")
@@ -56,7 +56,7 @@ class KVStore(Mapping[K, V]):
 
         self.key_builder = KeyBuilder()
 
-        # isolation_level=None: enable autocommit mode	
+        # isolation_level=None: enable autocommit mode
         # https://www.sqlite.org/lang_transaction.html#implicit_versus_explicit_transactions
         self.conn = sqlite3.connect(self.filename, isolation_level=None)
 
@@ -86,7 +86,8 @@ class KVStore(Mapping[K, V]):
                 return self.conn.execute(*args)
             except sqlite3.OperationalError as e:
                 # If the database is busy, retry
-                if hasattr(e, "sqlite_errorcode") and not e.sqlite_errorcode == sqlite3.SQLITE_BUSY:
+                if (hasattr(e, "sqlite_errorcode")
+                        and not e.sqlite_errorcode == sqlite3.SQLITE_BUSY):
                     raise
 
     def _collision_check(self, key: K, stored_key: K) -> None:
@@ -105,17 +106,15 @@ class KVStore(Mapping[K, V]):
         pickled_data = pickle.dumps((key, value))
         compressed_data = zlib.compress(pickled_data)
 
-        if replace:
-            self.conn.execute(
-                "INSERT OR REPLACE INTO dict VALUES (?, ?)", (keyhash, compressed_data)
-            )
-        else:
-            self.conn.execute(
-                "INSERT OR IGNORE INTO dict VALUES (?, ?)", (keyhash, compressed_data)
-            )
+        mode = "REPLACE" if replace else "IGNORE"
 
-    def _load_data(self, keyhash: str) -> Tuple[K, V]:
-        c = self.conn.execute("SELECT key_value FROM dict WHERE keyhash=?", (keyhash,))
+        self.conn.execute(
+            f"INSERT OR {mode} INTO dict VALUES (?, ?)", (keyhash, compressed_data)
+        )
+
+    def _load_data(self, keyhash: str) -> Any:
+        c = self.conn.execute("SELECT key_value FROM dict WHERE keyhash=?",
+                              (keyhash,))
         row = c.fetchone()
         if row is None:
             raise NoSuchEntryError(keyhash)
@@ -169,7 +168,8 @@ class KVStore(Mapping[K, V]):
                     raise e
             except sqlite3.OperationalError as e:
                 # If the database is busy, retry
-                if hasattr(e, "sqlite_errorcode") and not e.sqlite_errorcode == sqlite3.SQLITE_BUSY:
+                if (hasattr(e, "sqlite_errorcode")
+                        and not e.sqlite_errorcode == sqlite3.SQLITE_BUSY):
                     raise
             else:
                 break
@@ -204,14 +204,11 @@ class KVStore(Mapping[K, V]):
 
     def nbytes(self) -> int:
         """Return the size of the dictionary in bytes."""
-        return cast(
-            int,
-            next(
-                self._exec_sql(
-                    "SELECT page_size * page_count FROM pragma_page_size(), pragma_page_count()"
-                )
-            )[0],
-        )
+        return cast(int,
+                    next(self._exec_sql("SELECT page_size * page_count FROM "
+                                        "pragma_page_size(), pragma_page_count()")
+                         )[0]
+                    )
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self.filename}, nitems={len(self)})"
@@ -249,6 +246,3 @@ class WriteOnceKVStore(KVStore[K, V]):
 
     def __delitem__(self, key: K) -> None:
         raise AttributeError("Write-once KVStore")
-
-
-
