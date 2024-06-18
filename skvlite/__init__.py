@@ -108,13 +108,13 @@ class KVStore(Mapping[K, V]):
 
         mode = "REPLACE" if replace else "IGNORE"
 
-        self.conn.execute(
+        self._exec_sql(
             f"INSERT OR {mode} INTO dict VALUES (?, ?)", (keyhash, compressed_data)
         )
 
     def _load_data(self, keyhash: str) -> Any:
-        c = self.conn.execute("SELECT key_value FROM dict WHERE keyhash=?",
-                              (keyhash,))
+        c = self._exec_sql("SELECT key_value FROM dict WHERE keyhash=?",
+                           (keyhash,))
         row = c.fetchone()
         if row is None:
             raise NoSuchEntryError(keyhash)
