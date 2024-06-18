@@ -1,9 +1,9 @@
 import os
 import pickle
+from pytools.persistent_dict import KeyBuilder
 import sqlite3
 from typing import Any, Generator, Mapping, Optional, Tuple, TypeVar, cast
 import zlib
-from pytools.persistent_dict import KeyBuilder
 
 
 K = TypeVar("K")
@@ -42,7 +42,11 @@ class KVStore(Mapping[K, V]):
             import platformdirs
 
             if sys.platform == "darwin" and os.getenv("XDG_CACHE_HOME") is not None:
-                container_dir = join(cast(str, os.getenv("XDG_CACHE_HOME")), "pytools")
+
+                # platformdirs does not handle XDG_CACHE_HOME on macOS	
+                # https://github.com/platformdirs/platformdirs/issues/269
+                container_dir = join(
+                    cast(str, os.getenv("XDG_CACHE_HOME")), "pytools")
             else:
                 container_dir = platformdirs.user_cache_dir("pytools", "pytools")
 
@@ -50,6 +54,9 @@ class KVStore(Mapping[K, V]):
         self.filename = join(container_dir, filename + ".sqlite")
 
         self.key_builder = KeyBuilder()
+
+        # isolation_level=None: enable autocommit mode	
+        # https://www.sqlite.org/lang_transaction.html#implicit_versus_explicit_transactions
         self.conn = sqlite3.connect(self.filename, isolation_level=None)
 
         self._exec_sql(
@@ -57,6 +64,7 @@ class KVStore(Mapping[K, V]):
             "(keyhash TEXT NOT NULL PRIMARY KEY, key_value BLOB NOT NULL)"
         )
 
+        # https://www.sqlite.org/wal.html
         if enable_wal:
             self._exec_sql("PRAGMA journal_mode = 'WAL'")
 
@@ -131,6 +139,7 @@ class KVStore(Mapping[K, V]):
         return self.fetch(key)
 
     def remove(self, key: K) -> None:
+        #  Remove the entry associated with *key* from the dictionary.
         keyhash = self.key_builder(key)
 
         while True:
@@ -239,3 +248,6 @@ class WriteOnceKVStore(KVStore[K, V]):
 
     def __delitem__(self, key: K) -> None:
         raise AttributeError("Write-once KVStore")
+
+
+
