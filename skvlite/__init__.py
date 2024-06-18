@@ -1,47 +1,20 @@
-import os
 import pickle
 import sqlite3
 from typing import Any, Generator, Mapping, Optional, Tuple, TypeVar, cast
 import zlib
 from pytools.persistent_dict import KeyBuilder
 
-
 K = TypeVar("K")
 V = TypeVar("V")
 
-
-class NoSuchEntryError(KeyError):
-    """Raised when an entry is not found in a :class:`PersistentDict`."""
-    pass
-
-
-class NoSuchEntryCollisionError(NoSuchEntryError):
-    """Raised when an entry is not found in a :class:`PersistentDict`, but it
-    contains an entry with the same hash key (hash collision)."""
-    pass
-
-
-class ReadOnlyEntryError(KeyError):
-    """Raised when an attempt is made to overwrite an entry in a
-    :class:`WriteOncePersistentDict`."""
-    pass
-
-
-class CollisionWarning(UserWarning):
-    """Warning raised when a collision is detected in a :class:`PersistentDict`."""
-    pass
-
-
 class KVStore(Mapping[K, V]):
-    def __init__(self, filename: str, container_dir: Optional[str] = None,
-                 enable_wal: bool = False) -> None:
-        from os.path import join
-
+    def __init__(self, filename: str, container_dir: Optional[str] = None, enable_wal: bool = True) -> None:
         if container_dir is None:
             import sys
             import platformdirs
 
             if sys.platform == "darwin" and os.getenv("XDG_CACHE_HOME") is not None:
+                from typing import cast
                 container_dir = join(cast(str, os.getenv("XDG_CACHE_HOME")), "pytools")
             else:
                 container_dir = platformdirs.user_cache_dir("pytools", "pytools")
@@ -60,17 +33,6 @@ class KVStore(Mapping[K, V]):
         if enable_wal:
             self._exec_sql("PRAGMA journal_mode = 'WAL'")
 
-        # Use in-memory temp store
-        # https://www.sqlite.org/pragma.html#pragma_temp_store
-        self._exec_sql("PRAGMA temp_store = 'MEMORY'")
-
-        # https://www.sqlite.org/pragma.html#pragma_synchronous
-        self._exec_sql("PRAGMA synchronous = 'NORMAL'")
-
-        # 64 MByte of cache
-        # https://www.sqlite.org/pragma.html#pragma_cache_size
-        self._exec_sql("PRAGMA cache_size = -64000")
-
     def _exec_sql(self, *args: Any) -> Any:
         while True:
             try:
@@ -82,12 +44,8 @@ class KVStore(Mapping[K, V]):
 
     def _collision_check(self, key: K, stored_key: K) -> None:
         if stored_key != key:
-            # Key collision, oh well.
-            raise Exception(
-                f"Key collision in cache at "
-                f"'{self.filename}' -- these are sufficiently unlikely "
-                "that they're often indicative of a broken hash key "
-                "implementation (that is not considering some elements "
+            raise KeyError(
+                "Stored key collision detected (keys are different but have the same hash, "
                 "relevant for equality comparison)"
             )
 
@@ -124,9 +82,6 @@ class KVStore(Mapping[K, V]):
 
         return cast(V, value)
 
-    def __setitem__(self, key: K, value: V) -> None:
-        self.store(key, value)
-
     def __getitem__(self, key: K) -> V:
         return self.fetch(key)
 
@@ -135,28 +90,21 @@ class KVStore(Mapping[K, V]):
 
         while True:
             try:
-                self.conn.execute("BEGIN EXCLUSIVE TRANSACTION")
+                # This is split into SELECT/DELETE to allow for a collision check
+                c = self.conn.execute(
+                    "SELECT key_value FROM dict WHERE keyhash=?", (keyhash,)
+                )
+                row = c.fetchone()
+                if row is None:
+                    raise NoSuchEntryError(key)
 
-                try:
-                    # This is split into SELECT/DELETE to allow for a collision check
-                    c = self.conn.execute(
-                        "SELECT key_value FROM dict WHERE keyhash=?", (keyhash,)
-                    )
-                    row = c.fetchone()
-                    if row is None:
-                        raise NoSuchEntryError(key)
+                compressed_data = row[0]
+                pickled_data = zlib.decompress(compressed_data)
 
-                    compressed_data = row[0]
-                    pickled_data = zlib.decompress(compressed_data)
+                stored_key, _value = pickle.loads(pickled_data)
+                self._collision_check(key, stored_key)
 
-                    stored_key, _value = pickle.loads(pickled_data)
-                    self._collision_check(key, stored_key)
-
-                    self.conn.execute("DELETE FROM dict WHERE keyhash=?", (keyhash,))
-                    self.conn.execute("COMMIT")
-                except Exception as e:
-                    self.conn.execute("ROLLBACK")
-                    raise e
+                self.conn.execute("DELETE FROM dict WHERE keyhash=?", (keyhash,))
             except sqlite3.OperationalError as e:
                 # If the database is busy, retry
                 if hasattr(e, "sqlite_errorcode") and not e.sqlite_errorcode == sqlite3.SQLITE_BUSY:
@@ -207,26 +155,7 @@ class KVStore(Mapping[K, V]):
         return f"{type(self).__name__}({self.filename}, nitems={len(self)})"
 
     def clear(self) -> None:
-        """Remove all entries from the dictionary."""
         self._exec_sql("DELETE FROM dict")
-
-    def store_if_not_present(self, key: Any, value: Any) -> None:
-        self.store(key, value, _skip_if_present=True)
-
-    def vacuum(self) -> None:
-        self._exec_sql("VACUUM")
-
-    def close(self) -> None:
-        self.conn.close()
-
-
-class ReadOnlyKVStore(KVStore[K, V]):
-    def __setitem__(self, key: Any, value: Any) -> None:
-        raise AttributeError("Read-only KVStore")
-
-    def __delitem__(self, key: Any) -> None:
-        raise AttributeError("Read-only KVStore")
-
 
 class WriteOnceKVStore(KVStore[K, V]):
     def store(self, key: K, value: V, _skip_if_present: bool = False) -> None:
@@ -239,4 +168,3 @@ class WriteOnceKVStore(KVStore[K, V]):
 
     def __delitem__(self, key: K) -> None:
         raise AttributeError("Write-once KVStore")
-
