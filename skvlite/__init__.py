@@ -240,10 +240,3 @@ class WriteOnceKVStore(KVStore[K, V]):
     def __delitem__(self, key: K) -> None:
         raise AttributeError("Write-once KVStore")
 
-
-class PersistentDict(KVStore[K, V]):
-    pass
-
-
-class WriteOncePersistentDict(WriteOnceKVStore[K, V]):
-    pass
