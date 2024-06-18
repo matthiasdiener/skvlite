@@ -139,7 +139,7 @@ class KVStore(Mapping[K, V]):
         return self.fetch(key)
 
     def remove(self, key: K) -> None:
-        #  Remove the entry associated with *key* from the dictionary.
+        """Remove the entry associated with *key* from the dictionary."""
         keyhash = self.key_builder(key)
 
         while True:
@@ -175,6 +175,7 @@ class KVStore(Mapping[K, V]):
                 break
 
     def __delitem__(self, key: K) -> None:
+        """Remove the entry associated with *key* from the dictionary."""
         self.remove(key)
 
     def __len__(self) -> int:
@@ -182,6 +183,7 @@ class KVStore(Mapping[K, V]):
         return cast(int, next(self._exec_sql("SELECT COUNT(*) FROM dict"))[0])
 
     def __iter__(self) -> Generator[K, None, None]:
+        """Return an iterator over the keys in the dictionary."""
         return self.keys()
 
     def keys(self) -> Generator[K, None, None]:  # type: ignore[override]
@@ -211,6 +213,7 @@ class KVStore(Mapping[K, V]):
                     )
 
     def __repr__(self) -> str:
+        """Return a string representation of the dictionary."""
         return f"{type(self).__name__}({self.filename}, nitems={len(self)})"
 
     def clear(self) -> None:
