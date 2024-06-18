@@ -1,10 +1,10 @@
 import os
 import pickle
-from pytools.persistent_dict import KeyBuilder
 import sqlite3
-from typing import Any, Generator, Mapping, Optional, Tuple, TypeVar, cast
 import zlib
+from typing import Any, Generator, Mapping, Optional, Tuple, TypeVar, cast
 
+from pytools.persistent_dict import KeyBuilder
 
 K = TypeVar("K")
 V = TypeVar("V")
@@ -39,6 +39,7 @@ class KVStore(Mapping[K, V]):
 
         if container_dir is None:
             import sys
+
             import platformdirs
 
             if sys.platform == "darwin" and os.getenv("XDG_CACHE_HOME") is not None:
