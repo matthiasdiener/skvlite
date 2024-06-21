@@ -284,7 +284,7 @@ def test_size() -> None:
             PersistentDict("pytools-test", container_dir=tmpdir)
 
         for i in range(10000):
-            pdict[f"foobarbazfoobbb{i}"] = i
+            pdict[f"{i}{i}{i}{i}{i}{i}{i}"] = i
 
         size = pdict.nbytes()
         print("sqlite size: ", size / 1024 / 1024, " MByte")
