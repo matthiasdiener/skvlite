@@ -1,7 +1,7 @@
 import os
 import pickle
 import sqlite3
-import zlib
+import zstandard as zstd  # Import Zstandard module
 from typing import Any, Generator, Mapping, Optional, Tuple, TypeVar, cast
 
 from pytools.persistent_dict import KeyBuilder
@@ -9,28 +9,23 @@ from pytools.persistent_dict import KeyBuilder
 K = TypeVar("K")
 V = TypeVar("V")
 
-
 class NoSuchEntryError(KeyError):
     """Raised when an entry is not found in a :class:`PersistentDict`."""
     pass
-
 
 class NoSuchEntryCollisionError(NoSuchEntryError):
     """Raised when an entry is not found in a :class:`PersistentDict`, but it
     contains an entry with the same hash key (hash collision)."""
     pass
 
-
 class ReadOnlyEntryError(KeyError):
     """Raised when an attempt is made to overwrite an entry in a
     :class:`WriteOncePersistentDict`."""
     pass
 
-
 class CollisionWarning(UserWarning):
     """Warning raised when a collision is detected in a :class:`PersistentDict`."""
     pass
-
 
 class KVStore(Mapping[K, V]):
     def __init__(self, filename: str, container_dir: Optional[str] = None,
@@ -39,15 +34,12 @@ class KVStore(Mapping[K, V]):
 
         if container_dir is None:
             import sys
-
             import platformdirs
 
             if sys.platform == "darwin" and os.getenv("XDG_CACHE_HOME") is not None:
-
                 # platformdirs does not handle XDG_CACHE_HOME on macOS
                 # https://github.com/platformdirs/platformdirs/issues/269
-                container_dir = join(
-                    cast(str, os.getenv("XDG_CACHE_HOME")), "pytools")
+                container_dir = join(cast(str, os.getenv("XDG_CACHE_HOME")), "pytools")
             else:
                 container_dir = platformdirs.user_cache_dir("pytools", "pytools")
 
@@ -103,8 +95,11 @@ class KVStore(Mapping[K, V]):
 
     def _store_data(self, key: K, value: V, replace: bool) -> None:
         keyhash = self.key_builder(key)
-        pickled_data = pickle.dumps((keyhash, (key, value)))
-        compressed_data = zlib.compress(pickled_data)
+        data = (key, value)
+        
+        # Compress data using Zstandard
+        pickled_data = pickle.dumps(data)
+        compressed_data = zstd.compress(pickled_data)
 
         mode = "REPLACE" if replace else "IGNORE"
 
@@ -112,22 +107,26 @@ class KVStore(Mapping[K, V]):
             f"INSERT OR {mode} INTO dict VALUES (?, ?)", (keyhash, compressed_data)
         )
 
-    def _load_data(self, keyhash: str) -> Any:
-        c = self._exec_sql("SELECT key_value FROM dict WHERE keyhash=?",
-                           (keyhash,))
+    def _load_data(self, keyhash: str) -> Tuple[K, V]:
+        c = self._exec_sql("SELECT key_value FROM dict WHERE keyhash=?", (keyhash,))
         row = c.fetchone()
         if row is None:
             raise NoSuchEntryError(keyhash)
+        
         compressed_data = row[0]
-        pickled_data = zlib.decompress(compressed_data)
-        return pickle.loads(pickled_data)
+        
+        # Decompress data using Zstandard
+        pickled_data = zstd.decompress(compressed_data)
+        data = pickle.loads(pickled_data)
+
+        return data
 
     def store(self, key: K, value: V, _skip_if_present: bool = False) -> None:
         self._store_data(key, value, not _skip_if_present)
 
     def fetch(self, key: K) -> V:
         keyhash = self.key_builder(key)
-        stored_keyhash, (stored_key, value) = self._load_data(keyhash)
+        stored_key, value = self._load_data(keyhash)
         self._collision_check(key, stored_key)
 
         return cast(V, value)
@@ -156,9 +155,11 @@ class KVStore(Mapping[K, V]):
                         raise NoSuchEntryError(key)
 
                     compressed_data = row[0]
-                    pickled_data = zlib.decompress(compressed_data)
+                    
+                    # Decompress data using Zstandard
+                    pickled_data = zstd.decompress(compressed_data)
 
-                    stored_keyhash, (stored_key, _value) = pickle.loads(pickled_data)
+                    stored_key, _value = pickle.loads(pickled_data)
                     self._collision_check(key, stored_key)
 
                     self.conn.execute("DELETE FROM dict WHERE keyhash=?", (keyhash,))
@@ -189,20 +190,23 @@ class KVStore(Mapping[K, V]):
     def keys(self) -> Generator[K, None, None]:  # type: ignore[override]
         """Return an iterator over the keys in the dictionary."""
         for row in self._exec_sql("SELECT key_value FROM dict ORDER BY rowid"):
-            pickled_data = zlib.decompress(row[0])
-            yield pickle.loads(pickled_data)[1][0]
+            # Decompress data using Zstandard
+            pickled_data = zstd.decompress(row[0])
+            yield pickle.loads(pickled_data)[0]
 
     def values(self) -> Generator[V, None, None]:  # type: ignore[override]
         """Return an iterator over the values in the dictionary."""
         for row in self._exec_sql("SELECT key_value FROM dict ORDER BY rowid"):
-            pickled_data = zlib.decompress(row[0])
-            yield pickle.loads(pickled_data)[1][1]
+            # Decompress data using Zstandard
+            pickled_data = zstd.decompress(row[0])
+            yield pickle.loads(pickled_data)[1]
 
     def items(self) -> Generator[Tuple[K, V], None, None]:  # type: ignore[override]
         """Return an iterator over the items in the dictionary."""
         for row in self._exec_sql("SELECT key_value FROM dict ORDER BY rowid"):
-            pickled_data = zlib.decompress(row[0])
-            yield pickle.loads(pickled_data)[1]
+            # Decompress data using Zstandard
+            pickled_data = zstd.decompress(row[0])
+            yield pickle.loads(pickled_data)
 
     def nbytes(self) -> int:
         """Return the size of the dictionary in bytes."""
@@ -229,25 +233,8 @@ class KVStore(Mapping[K, V]):
     def close(self) -> None:
         self.conn.close()
 
-
 class ReadOnlyKVStore(KVStore[K, V]):
     def __setitem__(self, key: Any, value: Any) -> None:
         raise AttributeError("Read-only KVStore")
 
     def __delitem__(self, key: Any) -> None:
-        raise AttributeError("Read-only KVStore")
-
-
-class WriteOnceKVStore(KVStore[K, V]):
-    def store(self, key: K, value: V, _skip_if_present: bool = False) -> None:
-        try:
-            self.fetch(key)
-        except NoSuchEntryError:
-            pass
-        else:
-            raise ReadOnlyEntryError(key)
-        self._store_data(key, value, replace=False)
-
-    def __setitem__(self, key: K, value: V) -> None:
-        self.store(key, value)
-
