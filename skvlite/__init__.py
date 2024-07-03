@@ -1,10 +1,11 @@
 import os
 import pickle
 import sqlite3
+import tempfile
 from typing import Any, Generator, Mapping, Optional, Tuple, TypeVar, cast
 
 import sqlite_zstd
-from pytools.persistent_dict import KeyBuilder
+from pytools.persistent_dict import PersistentDict
 
 K = TypeVar("K")
 V = TypeVar("V")
@@ -40,7 +41,7 @@ class KVStore(Mapping[K, V]):
         os.makedirs(container_dir, exist_ok=True)
         self.filename = join(container_dir, filename + ".sqlite")
 
-        self.key_builder = KeyBuilder()
+        self.key_builder = lambda x: str(x)
 
         # Connect to SQLite database and enable extension loading
         self.conn = sqlite3.connect(self.filename, isolation_level=None)
@@ -61,6 +62,10 @@ class KVStore(Mapping[K, V]):
         self._exec_sql("PRAGMA temp_store = 'MEMORY'")
         self._exec_sql("PRAGMA synchronous = 'NORMAL'")
         self._exec_sql("PRAGMA cache_size = -64000")
+
+        # Perform VACUUM operation after enabling compression
+        uncompressed_size, compressed_size = self.vacuum_and_report_size()
+        print(f"Database sizes - Uncompressed: {uncompressed_size} bytes, Compressed: {compressed_size} bytes")
 
     def _exec_sql(self, *args: Any) -> Any:
         while True:
@@ -188,6 +193,11 @@ class KVStore(Mapping[K, V]):
 
     def enable_zstd_compression(self, table: str, column: str, compression_level: int = 19, dict_chooser: str = "''a''") -> None:
         """Enable zstd compression for a specific table and column."""
+        # Create the table if not exists
+        self._exec_sql(
+            f"CREATE TABLE IF NOT EXISTS {table} (id INTEGER PRIMARY KEY AUTOINCREMENT, {column} TEXT)"
+        )
+
         compression_config = f'{{"table": "{table}", "column": "{column}", "compression_level": {compression_level}, "dict_chooser": "{dict_chooser}"}}'
         self.conn.execute(f"SELECT zstd_enable_transparent('{compression_config}')")
         self.conn.execute('SELECT zstd_incremental_maintenance(null, 1)')
@@ -233,3 +243,4 @@ class WriteOnceKVStore(KVStore[K, V]):
 
     def __delitem__(self, key: Any) -> None:
         raise AttributeError("Write-once KVStore")
+
