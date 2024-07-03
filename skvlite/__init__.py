@@ -15,20 +15,9 @@ class NoSuchEntryError(KeyError):
     pass
 
 
-class NoSuchEntryCollisionError(NoSuchEntryError):
-    """Raised when an entry is not found in a :class:`PersistentDict`, but it
-    contains an entry with the same hash key (hash collision)."""
-    pass
-
-
 class ReadOnlyEntryError(KeyError):
     """Raised when an attempt is made to overwrite an entry in a
     :class:`WriteOncePersistentDict`."""
-    pass
-
-
-class CollisionWarning(UserWarning):
-    """Warning raised when a collision is detected in a :class:`PersistentDict`."""
     pass
 
 
@@ -81,16 +70,6 @@ class KVStore(Mapping[K, V]):
             else:
                 break
 
-    def _collision_check(self, key: K, stored_key: K) -> None:
-        if stored_key != key:
-            raise Exception(
-                f"Key collision in cache at "
-                f"'{self.filename}' -- these are sufficiently unlikely "
-                "that they're often indicative of a broken hash key "
-                "implementation (that is not considering some elements "
-                "relevant for equality comparison)"
-            )
-
     def store(self, key: K, value: V, _skip_if_present: bool = False) -> None:
         keyhash = self.key_builder(key)
         v = pickle.dumps((key, value))
@@ -110,7 +89,6 @@ class KVStore(Mapping[K, V]):
             raise NoSuchEntryError(key)
 
         stored_key, value = pickle.loads(row[0])
-        self._collision_check(key, stored_key)
 
         return cast(V, value)
 
@@ -134,9 +112,6 @@ class KVStore(Mapping[K, V]):
                     row = c.fetchone()
                     if row is None:
                         raise NoSuchEntryError(key)
-
-                    stored_key, _value = pickle.loads(row[0])
-                    self._collision_check(key, stored_key)
 
                     self.conn.execute("DELETE FROM dict WHERE keyhash=?", (keyhash,))
                     self.conn.execute("COMMIT")
