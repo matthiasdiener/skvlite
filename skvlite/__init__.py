@@ -23,7 +23,7 @@ class ReadOnlyEntryError(KeyError):
 
 class KVStore(Mapping[K, V]):
     def __init__(self, filename: str, container_dir: Optional[str] = None,
-                 enable_wal: bool = False, compression_config: Optional[str] = None) -> None:
+                 enable_wal: bool = False) -> None:
         from os.path import join
 
         if container_dir is None:
@@ -48,11 +48,6 @@ class KVStore(Mapping[K, V]):
 
         # Load sqlite-zstd extension
         sqlite_zstd.load(self.conn)
-
-        # Enable zstd compression and apply configuration if provided
-        if compression_config:
-            self.conn.execute(f"SELECT zstd_enable_transparent('{compression_config}')")
-            self.conn.execute('SELECT zstd_incremental_maintenance(null, 1)')
 
         # Create dictionary table if not exists
         self._exec_sql(
@@ -190,6 +185,12 @@ class KVStore(Mapping[K, V]):
 
     def close(self) -> None:
         self.conn.close()
+
+    def enable_zstd_compression(self, table: str, column: str, compression_level: int = 19, dict_chooser: str = "''a''") -> None:
+        """Enable zstd compression for a specific table and column."""
+        compression_config = f'{{"table": "{table}", "column": "{column}", "compression_level": {compression_level}, "dict_chooser": "{dict_chooser}"}}'
+        self.conn.execute(f"SELECT zstd_enable_transparent('{compression_config}')")
+        self.conn.execute('SELECT zstd_incremental_maintenance(null, 1)')
 
 
 class ReadOnlyKVStore(KVStore[K, V]):
