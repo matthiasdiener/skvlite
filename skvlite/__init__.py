@@ -3,8 +3,7 @@ import pickle
 import sqlite3
 from typing import Any, Generator, Mapping, Optional, Tuple, TypeVar, cast
 
-import sqlite_zstd  
-
+import sqlite_zstd
 from pytools.persistent_dict import KeyBuilder
 
 K = TypeVar("K")
@@ -188,8 +187,13 @@ class KVStore(Mapping[K, V]):
     def store_if_not_present(self, key: Any, value: Any) -> None:
         self.store(key, value, _skip_if_present=True)
 
-    def vacuum(self) -> None:
+    def vacuum_and_report_size(self) -> Tuple[int, int]:
+        """Perform VACUUM operation and return size before and after."""
+        uncompressed_size = os.path.getsize(self.filename)
         self._exec_sql("VACUUM")
+        self.conn.commit()
+        compressed_size = os.path.getsize(self.filename)
+        return uncompressed_size, compressed_size
 
     def close(self) -> None:
         self.conn.close()
