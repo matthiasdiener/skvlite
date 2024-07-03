@@ -23,7 +23,7 @@ class ReadOnlyEntryError(KeyError):
 
 class KVStore(Mapping[K, V]):
     def __init__(self, filename: str, container_dir: Optional[str] = None,
-                 enable_wal: bool = False) -> None:
+                 enable_wal: bool = False, compression_config: Optional[str] = None) -> None:
         from os.path import join
 
         if container_dir is None:
@@ -49,6 +49,12 @@ class KVStore(Mapping[K, V]):
         # Load sqlite-zstd extension
         sqlite_zstd.load(self.conn)
 
+        # Enable zstd compression and apply configuration if provided
+        if compression_config:
+            self.conn.execute(f"SELECT zstd_enable_transparent('{compression_config}')")
+            self.conn.execute('SELECT zstd_incremental_maintenance(null, 1)')
+
+        # Create dictionary table if not exists
         self._exec_sql(
             "CREATE TABLE IF NOT EXISTS dict "
             "(keyhash TEXT NOT NULL PRIMARY KEY, key_value TEXT NOT NULL)"
