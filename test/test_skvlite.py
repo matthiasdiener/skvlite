@@ -288,7 +288,7 @@ def test_size() -> None:
 
         size = pdict.nbytes()
         print("sqlite size: ", size / 1024 / 1024, " MByte")
-        #assert 1 * 1024 * 1024 < size < 2 * 1024 * 1024
+        assert 1 * 1024 * 1024 < size < 2 * 1024 * 1024
     finally:
         shutil.rmtree(tmpdir)
 
