@@ -11,13 +11,13 @@ V = TypeVar("V")
 
 
 class NoSuchEntryError(KeyError):
-    """Raised when an entry is not found in a :class:`PersistentDict`."""
+    """Raised when an entry is not found in a :class:`KVStore`."""
     pass
 
 
 class ReadOnlyEntryError(KeyError):
     """Raised when an attempt is made to overwrite an entry in a
-    :class:`WriteOncePersistentDict`."""
+    :class:`WriteOnceKVStore`."""
     pass
 
 
@@ -42,9 +42,11 @@ class KVStore(Mapping[K, V]):
 
         self.key_builder = KeyBuilder()
 
-        # Connect to SQLite database and load sqlite-zstd extension
+        # Connect to SQLite database and enable extension loading
         self.conn = sqlite3.connect(self.filename, isolation_level=None)
         self.conn.enable_load_extension(True)
+
+        # Load sqlite-zstd extension
         sqlite_zstd.load(self.conn)
 
         self._exec_sql(
@@ -70,6 +72,12 @@ class KVStore(Mapping[K, V]):
             else:
                 break
 
+    def _collision_check(self, key: K, stored_key: K) -> None:
+        if stored_key != key:
+            raise Exception(
+                f"Key collision in cache at '{self.filename}'"
+            )
+
     def store(self, key: K, value: V, _skip_if_present: bool = False) -> None:
         keyhash = self.key_builder(key)
         v = pickle.dumps((key, value))
@@ -89,6 +97,7 @@ class KVStore(Mapping[K, V]):
             raise NoSuchEntryError(key)
 
         stored_key, value = pickle.loads(row[0])
+        self._collision_check(key, stored_key)
 
         return cast(V, value)
 
@@ -112,6 +121,9 @@ class KVStore(Mapping[K, V]):
                     row = c.fetchone()
                     if row is None:
                         raise NoSuchEntryError(key)
+
+                    stored_key, _value = pickle.loads(row[0])
+                    self._collision_check(key, stored_key)
 
                     self.conn.execute("DELETE FROM dict WHERE keyhash=?", (keyhash,))
                     self.conn.execute("COMMIT")
@@ -191,8 +203,7 @@ class WriteOnceKVStore(KVStore[K, V]):
             self._exec_sql("INSERT INTO dict VALUES (?, ?)", (keyhash, v))
         except sqlite3.IntegrityError:
             if not _skip_if_present:
-                raise ReadOnlyEntryError("WriteOncePersistentDict, "
-                                         "tried overwriting key")
+                raise ReadOnlyEntryError("WriteOnceKVStore, tried overwriting key")
 
     def _fetch(self, keyhash: str) -> Tuple[K, V]:
         c = self._exec_sql("SELECT key_value FROM dict WHERE keyhash=?",
