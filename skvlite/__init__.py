@@ -10,17 +10,25 @@ from pytools.persistent_dict import PersistentDict
 K = TypeVar("K")
 V = TypeVar("V")
 
-
+class KeyBuilder:
+    def __call__(self, key: Any) -> str:
+        return str(key)
+    
 class NoSuchEntryError(KeyError):
-    """Raised when an entry is not found in a :class:`KVStore`."""
+    """Raised when an entry is not found in a :class:`PersistentDict`."""
     pass
 
-
+class NoSuchEntryCollisionError(NoSuchEntryError):
+    """Raised when an entry is not found in a :class:`PersistentDict`, but it
+    contains an entry with the same hash key (hash collision)."""
+    pass
 class ReadOnlyEntryError(KeyError):
     """Raised when an attempt is made to overwrite an entry in a
     :class:`WriteOnceKVStore`."""
     pass
-
+class CollisionWarning(UserWarning):
+    """Warning raised when a collision is detected in a :class:`PersistentDict`."""
+    pass
 
 class KVStore(Mapping[K, V]):
     def __init__(self, filename: str, container_dir: Optional[str] = None,
@@ -33,6 +41,8 @@ class KVStore(Mapping[K, V]):
 
             if sys.platform == "darwin" and os.getenv("XDG_CACHE_HOME") is not None:
                 from typing import cast
+                # platformdirs does not handle XDG_CACHE_HOME on macOS
+                # https://github.com/platformdirs/platformdirs/issues/269
                 container_dir = join(
                     cast(str, os.getenv("XDG_CACHE_HOME")), "pytools")
             else:
@@ -40,8 +50,10 @@ class KVStore(Mapping[K, V]):
 
         os.makedirs(container_dir, exist_ok=True)
         self.filename = join(container_dir, filename + ".sqlite")
-
-        self.key_builder = lambda x: str(x)
+        #self.key_builder = lambda x: str(x)
+        self.key_builder = KeyBuilder()
+        # isolation_level=None: enable autocommit mode
+        # https://www.sqlite.org/lang_transaction.html#implicit_versus_explicit_transactions
 
         # Connect to SQLite database and enable extension loading
         self.conn = sqlite3.connect(self.filename, isolation_level=None)
@@ -64,14 +76,15 @@ class KVStore(Mapping[K, V]):
         self._exec_sql("PRAGMA cache_size = -64000")
 
         # Perform VACUUM operation after enabling compression
-        uncompressed_size, compressed_size = self.vacuum_and_report_size()
-        print(f"Database sizes - Uncompressed: {uncompressed_size} bytes, Compressed: {compressed_size} bytes")
+        # uncompressed_size, compressed_size = self.vacuum_and_report_size()
+        # print(f"Database sizes - Uncompressed: {uncompressed_size} bytes, Compressed: {compressed_size} bytes")
 
     def _exec_sql(self, *args: Any) -> Any:
         while True:
             try:
                 return self.conn.execute(*args)
             except sqlite3.OperationalError as e:
+                # If the database is busy, retry
                 if (hasattr(e, "sqlite_errorcode")
                         and not e.sqlite_errorcode == sqlite3.SQLITE_BUSY):
                     raise
