@@ -15,7 +15,7 @@ sqlite_zstd.load(conn)
 conn.execute('CREATE TABLE test (id INTEGER PRIMARY KEY, data TEXT)')
 sample_data = "This is some sample data to test compression with sqlite-zstd. " * 100
 
-for i in range(1, 101):
+for i in range(1, 101): #add data from the sqlite file - extract this data earlier 
     conn.execute('INSERT INTO test (data) VALUES (?)', (sample_data,))
 
 conn.commit()
