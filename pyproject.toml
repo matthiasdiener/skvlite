@@ -16,6 +16,7 @@ dependencies = [
     "importlib_metadata;python_version<'3.8'",
     "pytools",
     "platformdirs",
+    "siphash24",
 ]
 readme = "README.md"
 license = { file="LICENSE" }
