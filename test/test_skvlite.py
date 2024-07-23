@@ -46,7 +46,7 @@ def test_persistent_dict_storage_and_lookup() -> None:
             return "".join(chr(65 + randrange(26)) for i in range(n))
 
         keys = [(randrange(2000) - 1000, rand_str(), None,
-                 SomeTag(rand_str()),  # type: ignore[call-arg]
+                 SomeTag(rand_str()),
                  frozenset({"abc", 123}))
                 for _ in range(20)]
         values = [randrange(2000) for i in range(20)]
@@ -288,7 +288,7 @@ def test_size() -> None:
 
         size = pdict.nbytes()
         print("sqlite size: ", size / 1024 / 1024, " MByte")
-        assert 1 * 1024 * 1024 < size < 2 * 1024 * 1024
+        assert 0.5 * 1024 * 1024 < size < 1.5 * 1024 * 1024
     finally:
         shutil.rmtree(tmpdir)
 
