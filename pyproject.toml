@@ -17,7 +17,6 @@ dependencies = [
     "pytools",
     "platformdirs",
     "siphash24",  # for pytools
-    "typing_extensions",
 ]
 readme = "README.md"
 license = { file="LICENSE" }
