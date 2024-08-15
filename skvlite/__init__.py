@@ -2,6 +2,7 @@ import os
 import pickle
 import sqlite3
 import zstd
+import sqlite_zstd
 from typing import Any, Generator, Mapping, Optional, Tuple, TypeVar, cast
 
 from pytools.persistent_dict import KeyBuilder
@@ -75,7 +76,9 @@ class KVStore(Mapping[K, V]):
 
         # Load zstd extension for SQLite
         self.conn.enable_load_extension(True)
-        sqlite3.load_extension(self.conn, "/path/to/sqlite_zstd")  # Update with correct path
+        self._exec_sql("PRAGMA trusted_schema = OFF;")
+        sqlite_zstd.load(self.conn)
+        print("Initialized zstd extension.")
 
     def _exec_sql(self, *args: Any) -> Any:
         while True:
@@ -240,4 +243,4 @@ class WriteOnceKVStore(KVStore[K, V]):
         self.store(key, value)
 
     def __delitem__(self, key: K) -> None:
-        raise AttributeError("Write-once KVStore")
+        raise ReadOnlyEntryError(key)
