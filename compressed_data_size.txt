@@ -1,0 +1,2 @@
+Original database size: 9832.00 KB
+Compressed data size: 1411.27 KB
