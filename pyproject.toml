@@ -16,6 +16,7 @@ dependencies = [
     "importlib_metadata;python_version<'3.8'",
     "pytools",
     "platformdirs",
+    "sqlite-zstd @ git+https://github.com/phiresky/sqlite-zstd.git#egg=sqlite_zstd&subdirectory=python"
 ]
 readme = "README.md"
 license = { file="LICENSE" }
