@@ -73,22 +73,6 @@ class KVStore(Mapping[K, V]):
         sqlite_zstd.load(self.conn)
         print("Initialized zstd extension.")
 
-        # Compression configuration
-        table_name = "dict"
-        column_name = "key_value"
-        compression_config = f"""'{{
-            "table": "{table_name}",
-            "column": "{column_name}",
-            "compression_level": 19,
-            "dict_chooser": "''a''"
-        }}'"""
-
-        try:
-            self._exec_sql(f"SELECT zstd_enable_transparent({compression_config});")
-            print(f"Enabled compression for {table_name}.{column_name}")
-        except sqlite3.OperationalError as e:
-            print(f"Error enabling compression for {table_name}.{column_name}: {str(e)}")
-
     def _exec_sql(self, *args: Any) -> Any:
         while True:
             try:
@@ -108,7 +92,9 @@ class KVStore(Mapping[K, V]):
     def _store_data(self, key: K, value: V, replace: bool) -> None:
         keyhash = self.key_builder(key)
         pickled_data = pickle.dumps((key, value))
-        compressed_data = self._exec_sql("SELECT zstd_compress(?)", (pickled_data,)).fetchone()[0]
+        
+        # Revert changes: Use original implementation
+        compressed_data = pickled_data
 
         mode = "REPLACE" if replace else "IGNORE"
 
@@ -124,8 +110,11 @@ class KVStore(Mapping[K, V]):
         row = c.fetchone()
         if row is None:
             raise NoSuchEntryError(keyhash)
+        
+        # Revert changes: Use original implementation
         compressed_data = row[0]
-        pickled_data = self._exec_sql("SELECT zstd_decompress(?)", (compressed_data,)).fetchone()[0]
+        pickled_data = compressed_data
+        
         return pickle.loads(pickled_data)
 
     def store(self, key: K, value: V, _skip_if_present: bool = False) -> None:
@@ -158,7 +147,7 @@ class KVStore(Mapping[K, V]):
                         raise NoSuchEntryError(key)
 
                     compressed_data = row[0]
-                    pickled_data = self._exec_sql("SELECT zstd_decompress(?)", (compressed_data,)).fetchone()[0]
+                    pickled_data = compressed_data
                     stored_key, _value = pickle.loads(pickled_data)
                     self._collision_check(key, stored_key)
 
@@ -184,18 +173,17 @@ class KVStore(Mapping[K, V]):
 
     def keys(self) -> Generator[K, None, None]:  # type: ignore[override]
         for row in self._exec_sql("SELECT key_value FROM dict ORDER BY rowid"):
-            pickled_data = self._exec_sql("SELECT zstd_decompress(?)", (row[0],)).fetchone()[0]
+            pickled_data = row[0]
             yield pickle.loads(pickled_data)[0]
 
     def values(self) -> Generator[V, None, None]:  # type: ignore[override]
         for row in self._exec_sql("SELECT key_value FROM dict ORDER BY rowid"):
-            pickled_data = self._exec_sql("SELECT zstd_decompress(?)", (row[0],)).fetchone()[0]
+            pickled_data = row[0]
             yield pickle.loads(pickled_data)[1]
 
     def items(self) -> Generator[Tuple[K, V], None, None]:  # type: ignore[override]
         for row in self._exec_sql("SELECT key_value FROM dict ORDER BY rowid"):
-            pickled_data = self._exec_sql("SELECT zstd_decompress(?)", (row[0],)).fetchone()[0]
-            yield pickle.loads(pickled_data)
+            yield pickle.loads(row[0])
 
     def nbytes(self) -> int:
         return cast(int, next(self._exec_sql("SELECT page_size * page_count FROM "
@@ -235,4 +223,4 @@ class WriteOnceKVStore(KVStore[K, V]):
         self.store(key, value)
 
     def __delitem__(self, key: K) -> None:
-        raise AttributeError("Write-once KVStore")
+        raise ReadOnlyEntryError(key)
