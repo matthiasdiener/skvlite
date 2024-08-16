@@ -1,7 +1,7 @@
 import os
 import pickle
 import sqlite3
-import zstd
+# import zstd
 import sqlite_zstd
 from typing import Any, Generator, Mapping, Optional, Tuple, TypeVar, cast
 
