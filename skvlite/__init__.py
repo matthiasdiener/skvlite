@@ -73,6 +73,22 @@ class KVStore(Mapping[K, V]):
         sqlite_zstd.load(self.conn)
         print("Initialized zstd extension.")
 
+        # Compression configuration
+        table_name = "dict"
+        column_name = "key_value"
+        compression_config = f"""'{{
+            "table": "{table_name}",
+            "column": "{column_name}",
+            "compression_level": 19,
+            "dict_chooser": "''a''"
+        }}'"""
+
+        try:
+            self._exec_sql(f"SELECT zstd_enable_transparent({compression_config});")
+            print(f"Enabled compression for {table_name}.{column_name}")
+        except sqlite3.OperationalError as e:
+            print(f"Error enabling compression for {table_name}.{column_name}: {str(e)}")
+
     def _exec_sql(self, *args: Any) -> Any:
         while True:
             try:
@@ -219,4 +235,4 @@ class WriteOnceKVStore(KVStore[K, V]):
         self.store(key, value)
 
     def __delitem__(self, key: K) -> None:
-        raise ReadOnlyEntryError(key)
+        raise AttributeError("Write-once KVStore")
