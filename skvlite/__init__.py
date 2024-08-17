@@ -29,7 +29,8 @@ class CollisionWarning(UserWarning):
 
 class KVStore(Mapping[K, V]):
     def __init__(self, filename: str, container_dir: Optional[str] = None,
-                 enable_wal: bool = False, enable_compression: bool = False) -> None:
+                 enable_wal: bool = False, enable_compression: bool = False,
+                 compression_level: int = 19) -> None:
         from os.path import join
 
         if container_dir is None:
@@ -69,6 +70,10 @@ class KVStore(Mapping[K, V]):
         self._exec_sql("PRAGMA temp_store = 'MEMORY'")
         self._exec_sql("PRAGMA synchronous = 'NORMAL'")
         self._exec_sql("PRAGMA cache_size = -64000")
+
+        # Automatically enable column compression if requested
+        if enable_compression:
+            self.enable_column_compression("dict", "key_value", compression_level)
 
     def _exec_sql(self, *args: Any) -> Any:
         while True:
@@ -231,18 +236,4 @@ class WriteOnceKVStore(KVStore[K, V]):
         row = c.fetchone()
         if row is None:
             raise KeyError
-        return pickle.loads(row[0])
-
-    def fetch(self, key: K) -> V:
-        keyhash = self.key_builder(key)
-
-        try:
-            stored_key, value = self._fetch(keyhash)
-        except KeyError:
-            raise NoSuchEntryError(key)
-        else:
-            self._collision_check(key, stored_key)
-            return value
-
-    def __delitem__(self, key: Any) -> None:
-        raise AttributeError("Write-once KVStore")
+        return
