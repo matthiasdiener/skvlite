@@ -93,8 +93,8 @@ class KVStore(Mapping[K, V]):
         keyhash = self.key_builder(key)
         pickled_data = pickle.dumps((key, value))
         
-        # Revert changes: Use original implementation
-        compressed_data = pickled_data
+        # Compress the pickled data using zstd
+        compressed_data = sqlite_zstd.compress(pickled_data)
 
         mode = "REPLACE" if replace else "IGNORE"
 
@@ -111,9 +111,9 @@ class KVStore(Mapping[K, V]):
         if row is None:
             raise NoSuchEntryError(keyhash)
         
-        # Revert changes: Use original implementation
+        # Decompress the data using zstd before unpickling
         compressed_data = row[0]
-        pickled_data = compressed_data
+        pickled_data = sqlite_zstd.decompress(compressed_data)
         
         return pickle.loads(pickled_data)
 
@@ -147,7 +147,7 @@ class KVStore(Mapping[K, V]):
                         raise NoSuchEntryError(key)
 
                     compressed_data = row[0]
-                    pickled_data = compressed_data
+                    pickled_data = sqlite_zstd.decompress(compressed_data)
                     stored_key, _value = pickle.loads(pickled_data)
                     self._collision_check(key, stored_key)
 
@@ -173,17 +173,17 @@ class KVStore(Mapping[K, V]):
 
     def keys(self) -> Generator[K, None, None]:  # type: ignore[override]
         for row in self._exec_sql("SELECT key_value FROM dict ORDER BY rowid"):
-            pickled_data = row[0]
+            pickled_data = sqlite_zstd.decompress(row[0])
             yield pickle.loads(pickled_data)[0]
 
     def values(self) -> Generator[V, None, None]:  # type: ignore[override]
         for row in self._exec_sql("SELECT key_value FROM dict ORDER BY rowid"):
-            pickled_data = row[0]
+            pickled_data = sqlite_zstd.decompress(row[0])
             yield pickle.loads(pickled_data)[1]
 
     def items(self) -> Generator[Tuple[K, V], None, None]:  # type: ignore[override]
         for row in self._exec_sql("SELECT key_value FROM dict ORDER BY rowid"):
-            yield pickle.loads(row[0])
+            yield pickle.loads(sqlite_zstd.decompress(row[0]))
 
     def nbytes(self) -> int:
         return cast(int, next(self._exec_sql("SELECT page_size * page_count FROM "

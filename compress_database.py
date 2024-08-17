@@ -32,23 +32,23 @@ tables = cursor_original.fetchall()
 for table in tables:
     table_name = table[0]
     print(f"Processing table: {table_name}")
-    
+
     # Get the CREATE TABLE SQL statement
     cursor_original.execute(f"SELECT sql FROM sqlite_master WHERE name='{table_name}';")
     create_table_sql = cursor_original.fetchone()[0]
     cursor_compressed.execute(create_table_sql)
-    
+
     # Fetch all rows from the original table
     cursor_original.execute(f"SELECT * FROM {table_name};")
     rows = cursor_original.fetchall()
-    
+
     # Get table columns information
     cursor_original.execute(f"PRAGMA table_info({table_name});")
     columns_info = cursor_original.fetchall()
     columns = [info[1] for info in columns_info]
     columns_str = ', '.join(columns)
     placeholders = ', '.join(['?' for _ in columns])
-    
+
     # Insert data into the compressed database
     insert_sql = f"INSERT INTO {table_name} ({columns_str}) VALUES ({placeholders});"
     cursor_compressed.executemany(insert_sql, rows)
