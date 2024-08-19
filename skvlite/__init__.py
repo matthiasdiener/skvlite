@@ -29,7 +29,7 @@ class CollisionWarning(UserWarning):
 
 class KVStore(Mapping[K, V]):
     def __init__(self, filename: str, container_dir: Optional[str] = None,
-                 enable_wal: bool = False, enable_compression: bool = False,
+                 enable_wal: bool = False, enable_compression: bool = True,
                  compression_level: int = 19) -> None:
         from os.path import join
 
