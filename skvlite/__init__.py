@@ -54,7 +54,7 @@ class KVStore(Mapping[K, V]):
         if enable_compression:
             # Enable zstd compression if requested
             self.conn.enable_load_extension(True)
-            self.conn.execute("PRAGMA trusted_schema = OFF;")
+            #self.conn.execute("PRAGMA trusted_schema = OFF;")
             sqlite_zstd.load(self.conn)
             print("Zstd compression enabled.")
 
