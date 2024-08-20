@@ -54,7 +54,7 @@ class KVStore(Mapping[K, V]):
         if enable_compression:
             # Enable zstd compression if requested
             self.conn.enable_load_extension(True)
-            #self.conn.execute("PRAGMA trusted_schema = OFF;")
+
             sqlite_zstd.load(self.conn)
             print("Zstd compression enabled.")
 
@@ -236,4 +236,19 @@ class WriteOnceKVStore(KVStore[K, V]):
         row = c.fetchone()
         if row is None:
             raise KeyError
-        return
+
+# Example usage
+if __name__ == "__main__":
+    store = KVStore("example")
+
+    # Perform some operations with the store...
+    store["key1"] = "value1"
+    store["key2"] = "value2"
+
+    # Run VACUUM before calculating the size
+    store.vacuum()
+    
+    size = store.nbytes()
+    print(f"Database size after VACUUM: {size} bytes")
+
+    store.close()
