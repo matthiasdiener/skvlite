@@ -1,3 +1,4 @@
+
 import os
 import pickle
 import sqlite3
@@ -74,7 +75,6 @@ class KVStore(Mapping[K, V]):
         # Automatically enable column compression if requested
         if enable_compression:
             self.enable_column_compression("dict", "key_value", compression_level)
-            self.vacuum()  # Additional VACUUM after enabling compression
 
     def _exec_sql(self, *args: Any) -> Any:
         while True:
@@ -194,10 +194,8 @@ class KVStore(Mapping[K, V]):
 
     def vacuum(self) -> None:
         self._exec_sql("VACUUM")
-        print("Manual VACUUM completed.")
 
     def close(self) -> None:
-        self.vacuum()  # VACUUM before closing the connection
         self.conn.close()
 
     def enable_column_compression(self, table_name: str, column_name: str, compression_level: int = 19) -> None:
@@ -232,3 +230,12 @@ class WriteOnceKVStore(KVStore[K, V]):
             if not _skip_if_present:
                 raise ReadOnlyEntryError("WriteOncePersistentDict, "
                                          "tried overwriting key")
+
+    def _fetch(self, keyhash: str) -> Tuple[K, V]:
+        c = self._exec_sql("SELECT key_value FROM dict WHERE keyhash=?",
+                           (keyhash,))
+        row = c.fetchone()
+        if row is None:
+            raise KeyError
+        return
+
